@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<users>
+  <user id="1">
+    <name>Alice Johnson</name>
+    <email>alice@example.com</email>
+    <address>
+      <street>123 Main St</street>
+      <city>New York</city>
+      <state>NY</state>
+      <zip>10001</zip>
+    </address>
+    <tags>
+      <tag>developer</tag>
+      <tag>golang</tag>
+      <tag>xml</tag>
+    </tags>
+  </user>
+  <user id="2">
+    <name>Bob Smith</name>
+    <email>bob@example.com</email>
+    <address>
+      <street>456 Oak Ave</street>
+      <city>Boston</city>
+      <state>MA</state>
+      <zip>02101</zip>
+    </address>
+    <tags>
+      <tag>designer</tag>
+      <tag>ui</tag>
+    </tags>
+  </user>
+  <user id="3">
+    <name>Charlie Davis</name>
+    <email>charlie@example.com</email>
+    <address>
+      <street>789 Pine Rd</street>
+      <city>Seattle</city>
+      <state>WA</state>
+      <zip>98101</zip>
+    </address>
+    <tags>
+      <tag>manager</tag>
+      <tag>product</tag>
+      <tag>strategy</tag>
+    </tags>
+  </user>
+</users>
