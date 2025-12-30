@@ -1,11 +1,11 @@
 # shape-xml
 
 ![Build Status](https://github.com/shapestone/shape-xml/actions/workflows/ci.yml/badge.svg)
-[![Go Report Card](https://goreportcard.com/badge/github.com/shapestone/shape-xml)](https://goreportcard.com/report/github.com/shapestone/shape-xml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/shapestone/shape-xml?v=2)](https://goreportcard.com/report/github.com/shapestone/shape-xml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![codecov](https://codecov.io/gh/shapestone/shape-xml/branch/main/graph/badge.svg)](https://codecov.io/gh/shapestone/shape-xml)
+[![codecov](https://codecov.io/gh/shapestone/shape-xml/branch/main/graph/badge.svg?v=3)](https://codecov.io/gh/shapestone/shape-xml)
 ![Go Version](https://img.shields.io/github/go-mod/go-version/shapestone/shape-xml)
-![Latest Release](https://img.shields.io/github/v/release/shapestone/shape-xml)
+![Latest Release](https://img.shields.io/github/v/release/shapestone/shape-xml?v=2)
 [![GoDoc](https://pkg.go.dev/badge/github.com/shapestone/shape-xml.svg)](https://pkg.go.dev/github.com/shapestone/shape-xml)
 
 [![CodeQL](https://github.com/shapestone/shape-xml/actions/workflows/codeql.yml/badge.svg)](https://github.com/shapestone/shape-xml/actions/workflows/codeql.yml)
