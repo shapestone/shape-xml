@@ -1,10 +1,14 @@
-// Package fastparser implements a high-performance XML validator without AST construction.
+// Package fastparser implements a high-performance XML parser without AST construction.
 //
-// This parser is optimized for validation only - checking that XML is well-formed.
-// It bypasses AST construction, validating directly from bytes for minimal overhead.
+// This parser is optimized for direct parsing to Go native types (map[string]interface{}).
+// It bypasses AST construction, parsing directly from bytes to Go values for minimal overhead.
+//
+// This is the "fast path" in the dual-path parser pattern. Use this for:
+//   - Unmarshal: Populate Go structs from XML (4-5x faster than AST path)
+//   - Validate: Check XML well-formedness (4-5x faster than AST path)
 //
 // Performance targets (vs AST parser):
-//   - 4-5x faster validation
+//   - 4-5x faster parsing
 //   - 5-6x less memory
 //   - 4-5x fewer allocations
 package fastparser
@@ -30,18 +34,19 @@ func NewParser(data []byte) *Parser {
 	}
 }
 
-// Parse validates the XML data and returns true if valid.
-// This is used by Validate and ValidateReader.
-func (p *Parser) Parse() (bool, error) {
+// Parse parses the XML data and returns the value as interface{} (map[string]interface{}).
+// This is used by Unmarshal and Validate.
+// For validation, the caller can simply discard the returned value.
+func (p *Parser) Parse() (interface{}, error) {
 	p.skipWhitespace()
 	if p.pos >= p.length {
-		return false, errors.New("unexpected end of XML input")
+		return nil, errors.New("unexpected end of XML input")
 	}
 
 	// Skip optional XML declaration
 	if p.peekString("<?xml") {
 		if err := p.skipXMLDeclaration(); err != nil {
-			return false, err
+			return nil, err
 		}
 	}
 
@@ -50,9 +55,10 @@ func (p *Parser) Parse() (bool, error) {
 	// Skip any comments before root element
 	p.skipComments()
 
-	// Validate root element
-	if err := p.validateElement(); err != nil {
-		return false, err
+	// Parse root element to Go map
+	result, err := p.parseElement()
+	if err != nil {
+		return nil, err
 	}
 
 	// Skip trailing comments and whitespace
@@ -60,29 +66,31 @@ func (p *Parser) Parse() (bool, error) {
 
 	// After parsing the root element, we should be at EOF
 	if p.pos < p.length {
-		return false, fmt.Errorf("unexpected content after root element at position %d", p.pos)
+		return nil, fmt.Errorf("unexpected content after root element at position %d", p.pos)
 	}
 
-	return true, nil
+	return result, nil
 }
 
-// validateElement validates an XML element without building AST.
-// Checks for:
-//   - Opening tag with valid name
-//   - Matching closing tag (for non-self-closing elements)
-//   - Proper nesting of child elements
-//   - Valid attribute syntax
-func (p *Parser) validateElement() error {
+// parseElement parses an XML element and returns it as a map[string]interface{}.
+// The map contains:
+//   - "@attribute": attribute values (prefixed with @)
+//   - "childElement": child element nodes
+//   - "#text": text content
+//   - "#cdata": CDATA content
+func (p *Parser) parseElement() (map[string]interface{}, error) {
 	// Expect '<'
 	if !p.consume('<') {
-		return fmt.Errorf("expected '<' at position %d", p.pos)
+		return nil, fmt.Errorf("expected '<' at position %d", p.pos)
 	}
 
 	// Read element name
 	elementName := p.readName()
 	if elementName == "" {
-		return fmt.Errorf("expected element name at position %d", p.pos)
+		return nil, fmt.Errorf("expected element name at position %d", p.pos)
 	}
+
+	result := make(map[string]interface{})
 
 	// Read attributes
 	for {
@@ -90,13 +98,13 @@ func (p *Parser) validateElement() error {
 
 		// Check for end of opening tag
 		if p.pos >= p.length {
-			return fmt.Errorf("unexpected end of input in element %q", elementName)
+			return nil, fmt.Errorf("unexpected end of input in element %q", elementName)
 		}
 
 		// Self-closing tag: />
 		if p.peekString("/>") {
 			p.pos += 2
-			return nil
+			return result, nil
 		}
 
 		// Regular closing: >
@@ -106,17 +114,23 @@ func (p *Parser) validateElement() error {
 		}
 
 		// Must be an attribute
-		if err := p.validateAttribute(); err != nil {
-			return fmt.Errorf("in element %q: %w", elementName, err)
+		attrName, attrValue, err := p.parseAttribute()
+		if err != nil {
+			return nil, fmt.Errorf("in element %q: %w", elementName, err)
 		}
+		// Prefix attribute names with @
+		result["@"+attrName] = attrValue
 	}
 
 	// Parse content (text, CDATA, child elements)
+	var textParts []string
+	var cdataParts []string
+
 	for {
 		p.skipWhitespace()
 
 		if p.pos >= p.length {
-			return fmt.Errorf("unexpected end of input, expected closing tag for %q", elementName)
+			return nil, fmt.Errorf("unexpected end of input, expected closing tag for %q", elementName)
 		}
 
 		// Check for closing tag
@@ -125,107 +139,207 @@ func (p *Parser) validateElement() error {
 
 			closingName := p.readName()
 			if closingName != elementName {
-				return fmt.Errorf("mismatched tags: opening %q, closing %q at position %d",
+				return nil, fmt.Errorf("mismatched tags: opening %q, closing %q at position %d",
 					elementName, closingName, p.pos)
 			}
 
 			p.skipWhitespace()
 			if !p.consume('>') {
-				return fmt.Errorf("expected '>' in closing tag for element %q at position %d",
+				return nil, fmt.Errorf("expected '>' in closing tag for element %q at position %d",
 					elementName, p.pos)
 			}
 
-			return nil
+			// Add accumulated text and CDATA if any
+			if len(textParts) > 0 {
+				text := trimSpace(joinStrings(textParts))
+				if text != "" {
+					result["#text"] = text
+				}
+			}
+			if len(cdataParts) > 0 {
+				result["#cdata"] = joinStrings(cdataParts)
+			}
+
+			return result, nil
 		}
 
 		// Check for comment
 		if p.peekString("<!--") {
 			if err := p.skipComment(); err != nil {
-				return err
+				return nil, err
 			}
 			continue
 		}
 
 		// Check for CDATA
 		if p.peekString("<![CDATA[") {
-			if err := p.skipCData(); err != nil {
-				return err
+			cdata, err := p.parseCDataContent()
+			if err != nil {
+				return nil, err
 			}
+			cdataParts = append(cdataParts, cdata)
 			continue
 		}
 
 		// Check for child element
 		if p.peek() == '<' {
-			if err := p.validateElement(); err != nil {
-				return fmt.Errorf("in element %q: %w", elementName, err)
+			// Save accumulated text before parsing child
+			if len(textParts) > 0 {
+				text := trimSpace(joinStrings(textParts))
+				if text != "" {
+					result["#text"] = text
+				}
+				textParts = nil
+			}
+
+			// Peek ahead to get child element name
+			savedPos := p.pos
+			p.pos++ // skip '<'
+			childName := p.readName()
+			p.pos = savedPos // restore position
+
+			if childName == "" {
+				return nil, fmt.Errorf("expected child element name at position %d", p.pos)
+			}
+
+			childNode, err := p.parseElement()
+			if err != nil {
+				return nil, fmt.Errorf("in element %q: %w", elementName, err)
+			}
+
+			// Store child by element name
+			if existing, exists := result[childName]; exists {
+				// Already have this element - convert to array or append
+				if arr, ok := existing.([]interface{}); ok {
+					result[childName] = append(arr, childNode)
+				} else {
+					result[childName] = []interface{}{existing, childNode}
+				}
+			} else {
+				result[childName] = childNode
 			}
 			continue
 		}
 
-		// Otherwise, it's text content - skip until next tag
-		if err := p.skipText(); err != nil {
-			return err
+		// Otherwise, it's text content
+		text, err := p.parseText()
+		if err != nil {
+			return nil, err
+		}
+		if text != "" {
+			textParts = append(textParts, text)
 		}
 	}
 }
 
-// validateAttribute validates an attribute without storing it.
+// parseAttribute parses an attribute and returns its name and value.
 // Attribute = Name "=" String
-func (p *Parser) validateAttribute() error {
+func (p *Parser) parseAttribute() (string, string, error) {
 	// Read attribute name
 	attrName := p.readName()
 	if attrName == "" {
-		return fmt.Errorf("expected attribute name at position %d", p.pos)
+		return "", "", fmt.Errorf("expected attribute name at position %d", p.pos)
 	}
 
 	p.skipWhitespace()
 
 	// Expect '='
 	if !p.consume('=') {
-		return fmt.Errorf("expected '=' after attribute name %q at position %d", attrName, p.pos)
+		return "", "", fmt.Errorf("expected '=' after attribute name %q at position %d", attrName, p.pos)
 	}
 
 	p.skipWhitespace()
 
 	// Read string value
-	if err := p.validateString(); err != nil {
-		return fmt.Errorf("invalid value for attribute %q: %w", attrName, err)
+	attrValue, err := p.parseString()
+	if err != nil {
+		return "", "", fmt.Errorf("invalid value for attribute %q: %w", attrName, err)
 	}
 
-	return nil
+	return attrName, attrValue, nil
 }
 
-// validateString validates a quoted string (single or double quotes).
-func (p *Parser) validateString() error {
+// parseString parses a quoted string (single or double quotes) and returns its value.
+func (p *Parser) parseString() (string, error) {
 	if p.pos >= p.length {
-		return errors.New("expected string")
+		return "", errors.New("expected string")
 	}
 
 	quote := p.data[p.pos]
 	if quote != '"' && quote != '\'' {
-		return fmt.Errorf("expected quote at position %d", p.pos)
+		return "", fmt.Errorf("expected quote at position %d", p.pos)
 	}
 	p.pos++ // skip opening quote
 
-	// Find closing quote
+	start := p.pos
+
+	// Fast path: no escape sequences
 	for p.pos < p.length {
 		c := p.data[p.pos]
-		p.pos++
 
 		if c == quote {
-			return nil
+			// Found closing quote
+			s := string(p.data[start:p.pos])
+			p.pos++ // skip closing quote
+			return s, nil
 		}
 
 		// Handle escape sequences
 		if c == '\\' {
+			// Found escape, use slow path
+			return p.parseStringWithEscapes(start, quote)
+		}
+
+		p.pos++
+	}
+
+	return "", errors.New("unterminated string")
+}
+
+// parseStringWithEscapes handles strings containing escape sequences.
+func (p *Parser) parseStringWithEscapes(start int, quote byte) (string, error) {
+	// We already found an escape at p.pos, everything before is in data[start:p.pos]
+	var buf []byte
+	buf = append(buf, p.data[start:p.pos]...)
+
+	for p.pos < p.length {
+		c := p.data[p.pos]
+
+		if c == quote {
+			p.pos++ // skip closing quote
+			return string(buf), nil
+		}
+
+		if c == '\\' {
+			p.pos++
 			if p.pos >= p.length {
-				return errors.New("unexpected end of string after backslash")
+				return "", errors.New("unexpected end of string after backslash")
 			}
-			p.pos++ // skip escaped character
+
+			escaped := p.data[p.pos]
+			p.pos++
+
+			// Handle common XML escape sequences
+			switch escaped {
+			case '\\', '"', '\'':
+				buf = append(buf, escaped)
+			case 'n':
+				buf = append(buf, '\n')
+			case 't':
+				buf = append(buf, '\t')
+			case 'r':
+				buf = append(buf, '\r')
+			default:
+				// For other escapes, preserve the backslash
+				buf = append(buf, '\\', escaped)
+			}
+		} else {
+			buf = append(buf, c)
+			p.pos++
 		}
 	}
 
-	return errors.New("unterminated string")
+	return "", errors.New("unterminated string")
 }
 
 // skipXMLDeclaration skips the XML declaration.
@@ -267,41 +381,47 @@ func (p *Parser) skipComment() error {
 	return errors.New("unterminated comment")
 }
 
-// skipCData skips a CDATA section: <![CDATA[ ... ]]>
-func (p *Parser) skipCData() error {
-	if !p.peekString("<![CDATA[") {
-		return nil
+
+// parseText parses text content until the next tag or special sequence.
+func (p *Parser) parseText() (string, error) {
+	start := p.pos
+	for p.pos < p.length {
+		c := p.data[p.pos]
+		if c == '<' {
+			return string(p.data[start:p.pos]), nil
+		}
+		p.pos++
 	}
-	p.pos += 9
+	return string(p.data[start:p.pos]), nil
+}
+
+// parseCDataContent parses a CDATA section and returns its content.
+// <![CDATA[ ... ]]>
+func (p *Parser) parseCDataContent() (string, error) {
+	if !p.peekString("<![CDATA[") {
+		return "", errors.New("expected CDATA section")
+	}
+	p.pos += 9 // skip "<![CDATA["
+
+	start := p.pos
 
 	// Find ]]>
 	for p.pos < p.length-2 {
 		if p.data[p.pos] == ']' && p.data[p.pos+1] == ']' && p.data[p.pos+2] == '>' {
-			p.pos += 3
-			return nil
+			content := string(p.data[start:p.pos])
+			p.pos += 3 // skip "]]>"
+			return content, nil
 		}
 		p.pos++
 	}
 
-	return errors.New("unterminated CDATA section")
-}
-
-// skipText skips text content until the next tag or special sequence.
-func (p *Parser) skipText() error {
-	for p.pos < p.length {
-		c := p.data[p.pos]
-		if c == '<' {
-			return nil
-		}
-		p.pos++
-	}
-	return nil
+	return "", errors.New("unterminated CDATA section")
 }
 
 // skipComments skips multiple consecutive comments.
 func (p *Parser) skipComments() {
 	for p.peekString("<!--") {
-		p.skipComment()
+		_ = p.skipComment() // Ignore error; parsing will fail later if comment is invalid
 		p.skipWhitespace()
 	}
 }
@@ -314,7 +434,7 @@ func (p *Parser) skipCommentsAndWhitespace() {
 		}
 
 		if p.peekString("<!--") {
-			p.skipComment()
+			_ = p.skipComment() // Ignore error; parsing will fail later if comment is invalid
 			continue
 		}
 
@@ -408,4 +528,51 @@ func isNameChar(c byte) bool {
 		(c >= '0' && c <= '9') ||
 		c == '.' ||
 		c == '-'
+}
+
+// Helper functions for string manipulation
+
+// joinStrings joins a slice of strings efficiently.
+func joinStrings(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+
+	// Calculate total length
+	totalLen := 0
+	for _, s := range parts {
+		totalLen += len(s)
+	}
+
+	// Build result
+	buf := make([]byte, 0, totalLen)
+	for _, s := range parts {
+		buf = append(buf, s...)
+	}
+	return string(buf)
+}
+
+// trimSpace trims leading and trailing whitespace from a string.
+func trimSpace(s string) string {
+	// Find first non-whitespace
+	start := 0
+	for start < len(s) && isWhitespace(s[start]) {
+		start++
+	}
+
+	// Find last non-whitespace
+	end := len(s)
+	for end > start && isWhitespace(s[end-1]) {
+		end--
+	}
+
+	return s[start:end]
+}
+
+// isWhitespace returns true if c is a whitespace character.
+func isWhitespace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }

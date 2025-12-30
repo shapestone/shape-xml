@@ -336,6 +336,336 @@ func BenchmarkStdXML_Unmarshal_Medium(b *testing.B) {
 	}
 }
 
+// BenchmarkStdXML_Unmarshal_Large benchmarks standard library XML unmarshaling on large file
+func BenchmarkStdXML_Unmarshal_Large(b *testing.B) {
+	if err := loadBenchmarkData(); err != nil {
+		b.Fatalf("Failed to load benchmark data: %v", err)
+	}
+
+	type Category struct {
+		Value string `xml:",chardata"`
+	}
+
+	type Price struct {
+		Currency string `xml:"currency,attr"`
+		Value    string `xml:",chardata"`
+	}
+
+	type Product struct {
+		ID          string     `xml:"id,attr"`
+		Name        string     `xml:"name"`
+		Description string     `xml:"description"`
+		Price       Price      `xml:"price"`
+		InStock     string     `xml:"inStock"`
+		Categories  []Category `xml:"categories>category"`
+	}
+
+	type Catalog struct {
+		Products []Product `xml:"products>product"`
+	}
+
+	b.SetBytes(int64(len(largeXML)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var catalog Catalog
+		err := xml.Unmarshal([]byte(largeXML), &catalog)
+		if err != nil {
+			b.Fatal(err)
+		}
+		// Prevent compiler optimization
+		_ = catalog
+	}
+}
+
+// ================================
+// Marshal Benchmarks
+// ================================
+
+// BenchmarkStdXML_Marshal_Small benchmarks standard library XML marshaling
+func BenchmarkStdXML_Marshal_Small(b *testing.B) {
+	type User struct {
+		ID     string `xml:"id,attr"`
+		Active string `xml:"active,attr"`
+		Name   string `xml:",chardata"`
+	}
+
+	user := User{
+		ID:     "123",
+		Active: "true",
+		Name:   "Alice",
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bytes, err := xml.Marshal(&user)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = bytes
+	}
+}
+
+// BenchmarkStdXML_Marshal_Medium benchmarks standard library XML marshaling on medium struct
+func BenchmarkStdXML_Marshal_Medium(b *testing.B) {
+	type Tag struct {
+		Value string `xml:",chardata"`
+	}
+
+	type Address struct {
+		Street string `xml:"street"`
+		City   string `xml:"city"`
+		State  string `xml:"state"`
+		Zip    string `xml:"zip"`
+	}
+
+	type User struct {
+		ID      string  `xml:"id,attr"`
+		Name    string  `xml:"name"`
+		Email   string  `xml:"email"`
+		Address Address `xml:"address"`
+		Tags    []Tag   `xml:"tags>tag"`
+	}
+
+	users := []User{
+		{
+			ID:    "1",
+			Name:  "Alice",
+			Email: "alice@example.com",
+			Address: Address{
+				Street: "123 Main St",
+				City:   "Springfield",
+				State:  "IL",
+				Zip:    "62701",
+			},
+			Tags: []Tag{
+				{Value: "admin"},
+				{Value: "user"},
+			},
+		},
+		{
+			ID:    "2",
+			Name:  "Bob",
+			Email: "bob@example.com",
+			Address: Address{
+				Street: "456 Oak Ave",
+				City:   "Springfield",
+				State:  "IL",
+				Zip:    "62702",
+			},
+			Tags: []Tag{
+				{Value: "user"},
+			},
+		},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bytes, err := xml.Marshal(&users)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = bytes
+	}
+}
+
+// BenchmarkShapeXML_Marshal_Small benchmarks shape-xml marshaling
+func BenchmarkShapeXML_Marshal_Small(b *testing.B) {
+	type User struct {
+		ID     string `xml:"id,attr"`
+		Active string `xml:"active,attr"`
+		Name   string `xml:",chardata"`
+	}
+
+	user := User{
+		ID:     "123",
+		Active: "true",
+		Name:   "Alice",
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bytes, err := shapexml.Marshal(&user)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = bytes
+	}
+}
+
+// BenchmarkShapeXML_Marshal_Medium benchmarks shape-xml marshaling on medium struct
+func BenchmarkShapeXML_Marshal_Medium(b *testing.B) {
+	type Tag struct {
+		Value string `xml:",chardata"`
+	}
+
+	type Address struct {
+		Street string `xml:"street"`
+		City   string `xml:"city"`
+		State  string `xml:"state"`
+		Zip    string `xml:"zip"`
+	}
+
+	type User struct {
+		ID      string  `xml:"id,attr"`
+		Name    string  `xml:"name"`
+		Email   string  `xml:"email"`
+		Address Address `xml:"address"`
+		Tags    []Tag   `xml:"tags>tag"`
+	}
+
+	users := []User{
+		{
+			ID:    "1",
+			Name:  "Alice",
+			Email: "alice@example.com",
+			Address: Address{
+				Street: "123 Main St",
+				City:   "Springfield",
+				State:  "IL",
+				Zip:    "62701",
+			},
+			Tags: []Tag{
+				{Value: "admin"},
+				{Value: "user"},
+			},
+		},
+		{
+			ID:    "2",
+			Name:  "Bob",
+			Email: "bob@example.com",
+			Address: Address{
+				Street: "456 Oak Ave",
+				City:   "Springfield",
+				State:  "IL",
+				Zip:    "62702",
+			},
+			Tags: []Tag{
+				{Value: "user"},
+			},
+		},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bytes, err := shapexml.Marshal(&users)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = bytes
+	}
+}
+
+// ================================
+// Unmarshal Benchmarks (Fast Path)
+// ================================
+
+// BenchmarkShapeXML_Unmarshal_Small benchmarks fast-path unmarshaling
+func BenchmarkShapeXML_Unmarshal_Small(b *testing.B) {
+	if err := loadBenchmarkData(); err != nil {
+		b.Fatalf("Failed to load benchmark data: %v", err)
+	}
+
+	type User struct {
+		ID     string `xml:"id,attr"`
+		Active string `xml:"active,attr"`
+		Name   string `xml:",chardata"`
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var user User
+		err := shapexml.Unmarshal([]byte(smallXML), &user)
+		if err != nil {
+			b.Fatal(err)
+		}
+		// Prevent compiler optimization
+		_ = user
+	}
+}
+
+// BenchmarkShapeXML_Unmarshal_Medium benchmarks fast-path unmarshaling on medium file
+func BenchmarkShapeXML_Unmarshal_Medium(b *testing.B) {
+	if err := loadBenchmarkData(); err != nil {
+		b.Fatalf("Failed to load benchmark data: %v", err)
+	}
+
+	type Tag struct {
+		Value string `xml:",chardata"`
+	}
+
+	type Address struct {
+		Street string `xml:"street"`
+		City   string `xml:"city"`
+		State  string `xml:"state"`
+		Zip    string `xml:"zip"`
+	}
+
+	type User struct {
+		ID      string  `xml:"id,attr"`
+		Name    string  `xml:"name"`
+		Email   string  `xml:"email"`
+		Address Address `xml:"address"`
+		Tags    []Tag   `xml:"tags>tag"`
+	}
+
+	type Users struct {
+		Users []User `xml:"user"`
+	}
+
+	b.SetBytes(int64(len(mediumXML)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var users Users
+		err := shapexml.Unmarshal([]byte(mediumXML), &users)
+		if err != nil {
+			b.Fatal(err)
+		}
+		// Prevent compiler optimization
+		_ = users
+	}
+}
+
+// BenchmarkShapeXML_Unmarshal_Large benchmarks fast-path unmarshaling on large file
+func BenchmarkShapeXML_Unmarshal_Large(b *testing.B) {
+	if err := loadBenchmarkData(); err != nil {
+		b.Fatalf("Failed to load benchmark data: %v", err)
+	}
+
+	type Category struct {
+		Value string `xml:",chardata"`
+	}
+
+	type Price struct {
+		Currency string `xml:"currency,attr"`
+		Value    string `xml:",chardata"`
+	}
+
+	type Product struct {
+		ID          string     `xml:"id,attr"`
+		Name        string     `xml:"name"`
+		Description string     `xml:"description"`
+		Price       Price      `xml:"price"`
+		InStock     string     `xml:"inStock"`
+		Categories  []Category `xml:"categories>category"`
+	}
+
+	type Catalog struct {
+		Products []Product `xml:"products>product"`
+	}
+
+	b.SetBytes(int64(len(largeXML)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var catalog Catalog
+		err := shapexml.Unmarshal([]byte(largeXML), &catalog)
+		if err != nil {
+			b.Fatal(err)
+		}
+		// Prevent compiler optimization
+		_ = catalog
+	}
+}
+
 // ================================
 // Round-trip Benchmarks
 // ================================

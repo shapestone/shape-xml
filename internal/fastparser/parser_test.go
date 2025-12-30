@@ -112,13 +112,13 @@ func TestParseValidXML(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewParser([]byte(tt.input))
-			valid, err := p.Parse()
+			result, err := p.Parse()
 			if err != nil {
 				t.Errorf("Parse() error = %v, want nil", err)
 				return
 			}
-			if !valid {
-				t.Errorf("Parse() = %v, want true", valid)
+			if result == nil {
+				t.Errorf("Parse() returned nil, want non-nil map")
 			}
 		})
 	}
@@ -214,8 +214,8 @@ func TestParseInvalidXML(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewParser([]byte(tt.input))
-			valid, err := p.Parse()
-			if err == nil && valid {
+			_, err := p.Parse()
+			if err == nil {
 				t.Errorf("Parse() expected error for invalid input %q", tt.input)
 			}
 		})
@@ -447,13 +447,13 @@ func TestParseWhitespace(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewParser([]byte(tt.input))
-			valid, err := p.Parse()
+			result, err := p.Parse()
 			if err != nil {
 				t.Errorf("Parse() error = %v, want nil", err)
 				return
 			}
-			if !valid {
-				t.Errorf("Parse() = %v, want true", valid)
+			if result == nil {
+				t.Errorf("Parse() returned nil, want non-nil map")
 			}
 		})
 	}
@@ -489,13 +489,13 @@ func TestParseNamespaces(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewParser([]byte(tt.input))
-			valid, err := p.Parse()
+			result, err := p.Parse()
 			if err != nil {
 				t.Errorf("Parse() error = %v, want nil", err)
 				return
 			}
-			if !valid {
-				t.Errorf("Parse() = %v, want true", valid)
+			if result == nil {
+				t.Errorf("Parse() returned nil, want non-nil map")
 			}
 		})
 	}

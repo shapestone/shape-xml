@@ -1,0 +1,188 @@
+// XML Grammar Specification
+// This grammar defines the XML data format parsing rules for shape-xml.
+//
+// Implementation Guide:
+// - Use LL(1) recursive descent parsing (see Shape ADR 0004)
+// - Each production rule becomes a parse function
+// - Return appropriate ast.SchemaNode types (ObjectNode for elements, LiteralNode for values)
+// - Provide context-aware error messages
+// - XML is a data format with hierarchical structure
+//
+// AST Representation:
+// - Elements → *ast.ObjectNode with properties
+// - Attributes → Properties with @ prefix (e.g., @id, @class)
+// - Text content → #text property
+// - CDATA → #cdata property
+// - Namespaces → Preserved in element/attribute names (e.g., ns:element)
+//
+// Example XML → AST mapping:
+//   <user id="123"><name>Alice</name></user>
+//   →
+//   *ast.ObjectNode{
+//     properties: {
+//       "@id": *ast.LiteralNode{value: "123"},
+//       "name": *ast.LiteralNode{value: "Alice"},
+//     }
+//   }
+
+// Top-level XML document
+// Parser function: Parse() -> ast.SchemaNode
+// Must have exactly one root element
+// Example valid: <root/>
+// Example valid: <?xml version="1.0"?><root/>
+// Example valid: <!-- comment --><root/>
+// Example invalid: (empty document)
+// Example invalid: <root/><other/> (multiple root elements)
+// Returns: ast.SchemaNode (the root element's AST node)
+Document = [ XMLDecl ] { Comment } Element { Comment } ;
+
+// XML declaration (optional)
+// Parser function: skipXMLDeclaration() -> error
+// Example valid: <?xml version="1.0"?>
+// Example valid: <?xml version="1.0" encoding="UTF-8"?>
+// Example valid: <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+// Example invalid: <?xml?> (version required)
+// Note: Declaration is skipped during parsing (not represented in AST)
+XMLDecl = "<?xml" { Attribute } "?>" ;
+
+// Comment
+// Parser function: skipComment() -> error
+// Example valid: <!-- comment -->
+// Example valid: <!-- multi-line
+//                    comment -->
+// Example invalid: <!-- -- --> (double hyphen not allowed in content)
+// Example invalid: <!--- --> (must start with exactly <!--)
+// Note: Comments are skipped during parsing (not represented in AST)
+Comment = "<!--" CommentContent "-->" ;
+
+// Comment content (anything except --)
+CommentContent = { [^-] | ( "-" [^-] ) }* ;
+
+// Element: the core XML structure
+// Parser function: parseElement() -> ast.SchemaNode
+// Two forms: empty element or start tag + content + end tag
+// Example valid: <user/>
+// Example valid: <user></user>
+// Example valid: <user id="123"/>
+// Example valid: <user id="123"><name>Alice</name></user>
+// Example invalid: <user> (unclosed)
+// Example invalid: <user></other> (mismatched tags)
+// Returns: *ast.ObjectNode with properties for attributes and children
+Element = EmptyElement | ( StartTag Content EndTag ) ;
+
+// Empty element (self-closing)
+// Example valid: <br/>
+// Example valid: <img src="logo.png"/>
+// Note: Whitespace allowed before />
+EmptyElement = "<" Name { Attribute } "/>" ;
+
+// Start tag
+// Parser function: Part of parseElement()
+// Example valid: <div>
+// Example valid: <div class="container">
+// Example invalid: <div (missing >)
+// Example invalid: <div class="unclosed> (unterminated attribute)
+StartTag = "<" Name { Attribute } ">" ;
+
+// End tag
+// Parser function: Part of parseElement() - must match start tag name
+// Example valid: </div>
+// Example invalid: </div > (no space before >)
+// Example invalid: </ div> (no space after </)
+EndTag = "</" Name ">" ;
+
+// Element content (between start and end tags)
+// Parser function: parseContent() -> void (adds properties to current element)
+// Can contain text, child elements, CDATA, and comments
+// Example valid: (empty)
+// Example valid: Hello world
+// Example valid: <child/>
+// Example valid: Text and <child>elements</child> mixed
+// Example valid: <![CDATA[<raw>]]>
+Content = { Text | Element | CDATA | Comment } ;
+
+// Attribute
+// Parser function: parseAttribute() -> (name string, value string)
+// Example valid: id="123"
+// Example valid: id='123'
+// Example valid: checked="checked"
+// Example valid: xmlns:custom="http://example.com"
+// Example invalid: id=123 (value must be quoted)
+// Example invalid: id (no value)
+// Example invalid: id="unterminated
+// Returns: Stored in parent element's properties with @ prefix
+Attribute = Name "=" QuotedValue ;
+
+// Quoted value (double or single quotes)
+// Parser function: parseQuotedValue() -> string
+// Supports entity references: &lt; &gt; &amp; &quot; &apos;
+// Example valid: "value"
+// Example valid: 'value'
+// Example valid: "with &lt;entities&gt;"
+// Example invalid: "unterminated
+// Example invalid: value (must be quoted)
+QuotedValue = ( '"' { [^"&] | EntityRef } '"' ) | ( "'" { [^'&] | EntityRef } "'" ) ;
+
+// Entity reference
+// Common entities: &lt; &gt; &amp; &quot; &apos; &#NNN; &#xHHH;
+// Parser function: parseEntityRef() -> string
+// Example valid: &lt;
+// Example valid: &gt;
+// Example valid: &#65;
+// Example valid: &#x41;
+// Example invalid: &unknown;
+EntityRef = "&" ( "lt" | "gt" | "amp" | "quot" | "apos" | CharRef ) ";" ;
+
+// Character reference (decimal or hexadecimal)
+// Example valid: &#65; (decimal)
+// Example valid: &#x41; (hexadecimal)
+CharRef = "#" ( [0-9]+ | ( "x" [0-9a-fA-F]+ ) ) ;
+
+// Text content
+// Parser function: parseText() -> string
+// Text between tags, stored in #text property
+// Whitespace handling: preserved (but can be normalized)
+// Example valid: Hello world
+// Example valid: Line 1
+//                Line 2
+// Example valid: Text with &lt;entities&gt;
+// Returns: Stored in element's #text property as *ast.LiteralNode
+Text = { [^<&] | EntityRef }+ ;
+
+// CDATA section
+// Parser function: parseCDATA() -> string
+// Contains literal text, no parsing of < or & needed
+// Example valid: <![CDATA[<xml>not parsed</xml>]]>
+// Example valid: <![CDATA[Use <tags> freely]]>
+// Example invalid: <![CDATA[cannot contain ]]> in content
+// Returns: Stored in element's #cdata property as *ast.LiteralNode
+CDATA = "<![CDATA[" CDATAContent "]]>" ;
+
+// CDATA content (anything except ]]>)
+CDATAContent = { [^\]]  | ( "]" [^\]] ) | ( "]]" [^>] ) }* ;
+
+// Name (element names, attribute names)
+// Parser function: parseName() -> string
+// Must start with letter or underscore, can contain letters, digits, hyphens, periods, colons
+// Colon used for namespaces: prefix:localname
+// Example valid: user
+// Example valid: user-profile
+// Example valid: ns:element
+// Example valid: _private
+// Example invalid: 123user (cannot start with digit)
+// Example invalid: user name (no spaces)
+Name = NameStartChar { NameChar } ;
+
+// Name start character
+// Letters (a-z, A-Z), underscore, or colon
+// Note: Full XML spec includes many Unicode categories, simplified here
+NameStartChar = [a-zA-Z_:] ;
+
+// Name character
+// Letters, digits, hyphen, period, underscore, colon
+NameChar = [a-zA-Z0-9._:-] ;
+
+// Whitespace (automatically consumed by tokenizer between tokens)
+// Space, tab, line feed, carriage return
+// Note: Whitespace within text content is preserved
+Whitespace = { " " | "\t" | "\n" | "\r" } ;

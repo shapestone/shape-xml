@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+
+	"github.com/shapestone/shape-xml/internal/fastparser"
 )
 
 // Marshal returns the XML encoding of v.
@@ -408,46 +410,26 @@ func formatValue(rv reflect.Value) string {
 }
 
 // Unmarshal parses the XML-encoded data and stores the result in the value pointed to by v.
-// For now, this is a simple implementation that uses Parse and converts to native types.
+//
+// This function uses a high-performance fast path that bypasses AST construction for
+// optimal performance (4-5x faster than AST path). If you need the AST for advanced
+// features, use Parse() followed by NodeToInterface().
+//
+// Unmarshal uses XML struct tags to map XML elements and attributes to struct fields:
+//
+//	type User struct {
+//	    ID   string `xml:"id,attr"`     // Attribute
+//	    Name string `xml:"name"`         // Child element
+//	    Bio  string `xml:",chardata"`    // Text content
+//	}
+//
+// To unmarshal XML into an interface value, Unmarshal stores a map[string]interface{}
+// representation:
+//   - "@attrname" for attributes
+//   - "#text" for text content
+//   - "#cdata" for CDATA sections
+//   - "childname" for child elements
 func Unmarshal(data []byte, v interface{}) error {
-	// Parse XML to AST
-	node, err := Parse(string(data))
-	if err != nil {
-		return err
-	}
-
-	// Convert AST to native Go types
-	value := NodeToInterface(node)
-
-	// Use reflection to assign to v
-	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr {
-		return fmt.Errorf("xml: Unmarshal requires a pointer")
-	}
-
-	// Get the value that the pointer points to
-	elem := rv.Elem()
-
-	// Assign the converted value
-	if !elem.CanSet() {
-		return fmt.Errorf("xml: Unmarshal cannot set value")
-	}
-
-	// For now, we only support unmarshaling to interface{} or map[string]interface{}
-	switch elem.Kind() {
-	case reflect.Interface:
-		elem.Set(reflect.ValueOf(value))
-	case reflect.Map:
-		if elem.Type().Key().Kind() == reflect.String {
-			if m, ok := value.(map[string]interface{}); ok {
-				elem.Set(reflect.ValueOf(m))
-			} else {
-				return fmt.Errorf("xml: cannot unmarshal to %T", v)
-			}
-		}
-	default:
-		return fmt.Errorf("xml: Unmarshal to %T not yet supported - use map[string]interface{} or interface{}", v)
-	}
-
-	return nil
+	// Fast path: Direct parsing without AST construction (4-5x faster)
+	return fastparser.Unmarshal(data, v)
 }

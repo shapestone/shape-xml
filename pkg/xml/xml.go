@@ -1,7 +1,13 @@
 // Package xml provides XML format parsing and AST generation.
 //
-// This package implements a complete XML parser.
-// It parses XML data into Shape's unified AST representation.
+// This package implements a complete XML parser that parses XML data into
+// Shape's unified AST representation.
+//
+// # Architecture
+//
+// This parser uses LL(1) recursive descent parsing (see Shape ADR 0004).
+// The grammar is defined in docs/grammar/xml.ebnf and verified through
+// automated tests (see Shape ADR 0005: Grammar-as-Verification).
 //
 // # Thread Safety
 //

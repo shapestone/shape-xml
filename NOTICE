@@ -1,0 +1,19 @@
+shape-xml
+Copyright © 2020-2025 Shapestone
+
+This product includes software developed by Shapestone
+(https://github.com/shapestone).
+
+This product depends on and integrates with:
+- Shape Core Infrastructure (https://github.com/shapestone/shape-core)
+  Copyright © 2020-2025 Shapestone
+  Licensed under the Apache License 2.0
+
+================================================================================
+
+THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
+
+This project has zero external dependencies beyond shape-core.
+All parsing and validation is implemented using custom code.
+
+================================================================================

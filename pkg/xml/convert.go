@@ -235,6 +235,7 @@ func isArray(props map[string]ast.SchemaNode) bool {
 		}
 	}
 
-	// Make sure there are no extra keys
-	return len(props) == len(props)
+	// If we got here, all keys 0..n-1 exist and no extra keys
+	// (if extra keys existed, len(props) would be > n and loop would fail)
+	return true
 }

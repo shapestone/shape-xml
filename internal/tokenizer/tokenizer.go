@@ -64,7 +64,6 @@ func CommentMatcher() tokenizer.Matcher {
 		}
 
 		// Find -->
-		var content []rune
 		for {
 			r, ok := stream.PeekChar()
 			if !ok {
@@ -73,17 +72,16 @@ func CommentMatcher() tokenizer.Matcher {
 
 			// Check for -->
 			if r == '-' {
-				checkpoint := stream.Clone()
+				savedLoc := stream.GetLocation()
 				if matchString(stream, "-->") {
-					// Return comment token (we could return the content if needed)
+					// Return comment token
 					return tokenizer.NewToken(TokenCommentStart, []rune("<!--"))
 				}
 				// Reset and continue
-				stream.Match(checkpoint)
+				stream.SetLocation(savedLoc)
 			}
 
 			stream.NextChar()
-			content = append(content, r)
 		}
 	}
 }
@@ -105,7 +103,7 @@ func CDataMatcher() tokenizer.Matcher {
 // Matches: <?xml ... ?> or <? ... ?>
 func PIAndXMLDeclMatcher() tokenizer.Matcher {
 	return func(stream tokenizer.Stream) *tokenizer.Token {
-		checkpoint := stream.Clone()
+		savedLoc := stream.GetLocation()
 
 		if !matchString(stream, "<?") {
 			return nil
@@ -113,14 +111,14 @@ func PIAndXMLDeclMatcher() tokenizer.Matcher {
 
 		// Check if it's an XML declaration
 		if matchString(stream, "xml") {
-			stream.Match(checkpoint)
+			stream.SetLocation(savedLoc)
 			if matchString(stream, "<?xml") {
 				return tokenizer.NewToken(TokenXMLDeclStart, []rune("<?xml"))
 			}
 		}
 
 		// Reset and return as PI start
-		stream.Match(checkpoint)
+		stream.SetLocation(savedLoc)
 		if matchString(stream, "<?") {
 			return tokenizer.NewToken(TokenPIStart, []rune("<?"))
 		}
@@ -153,46 +151,98 @@ func TagSelfCloseMatcher() tokenizer.Matcher {
 
 // StringMatcher creates a matcher for XML string literals (attribute values).
 // Matches: "..." or '...'
+// Uses ByteStream fast path with SWAR for optimal performance on ASCII strings.
 func StringMatcher() tokenizer.Matcher {
 	return func(stream tokenizer.Stream) *tokenizer.Token {
-		r, ok := stream.PeekChar()
+		// Try ByteStream fast path for ASCII strings
+		if byteStream, ok := stream.(tokenizer.ByteStream); ok {
+			return stringMatcherByte(byteStream)
+		}
+
+		// Fallback to rune-based matcher
+		return stringMatcherRune(stream)
+	}
+}
+
+// stringMatcherByte uses ByteStream for optimal string matching.
+func stringMatcherByte(stream tokenizer.ByteStream) *tokenizer.Token {
+	b, ok := stream.PeekByte()
+	if !ok {
+		return nil
+	}
+
+	// Check for opening quote
+	var quote byte
+	if b == '"' || b == '\'' {
+		quote = b
+	} else {
+		return nil
+	}
+
+	startPos := stream.BytePosition()
+	stream.NextByte() // consume opening quote
+
+	// Use SWAR to find closing quote quickly
+	remaining := stream.RemainingBytes()
+	offset := tokenizer.FindByte(remaining, quote)
+
+	if offset == -1 {
+		// No closing quote found
+		return nil
+	}
+
+	// Advance to the quote position
+	for i := 0; i < offset; i++ {
+		stream.NextByte()
+	}
+
+	// Consume the closing quote
+	stream.NextByte()
+
+	// Extract the string value
+	value := stream.SliceFrom(startPos)
+	return tokenizer.NewToken(TokenString, []rune(string(value)))
+}
+
+// stringMatcherRune is the fallback rune-based implementation.
+func stringMatcherRune(stream tokenizer.Stream) *tokenizer.Token {
+	r, ok := stream.PeekChar()
+	if !ok {
+		return nil
+	}
+
+	// Check for opening quote
+	var quote rune
+	if r == '"' || r == '\'' {
+		quote = r
+	} else {
+		return nil
+	}
+
+	var value []rune
+	value = append(value, quote)
+	stream.NextChar()
+
+	// Read until closing quote
+	for {
+		r, ok := stream.NextChar()
 		if !ok {
-			return nil
+			return nil // Unterminated string
 		}
 
-		// Check for opening quote
-		var quote rune
-		if r == '"' || r == '\'' {
-			quote = r
-		} else {
-			return nil
+		value = append(value, r)
+
+		if r == quote {
+			return tokenizer.NewToken(TokenString, value)
 		}
 
-		var value []rune
-		value = append(value, quote)
-		stream.NextChar()
-
-		// Read until closing quote
-		for {
-			r, ok := stream.NextChar()
+		// Handle escape sequences if needed
+		if r == '\\' {
+			escaped, ok := stream.NextChar()
 			if !ok {
-				return nil // Unterminated string
+				return nil
 			}
-
-			value = append(value, r)
-
-			if r == quote {
-				return tokenizer.NewToken(TokenString, value)
-			}
-
-			// Handle escape sequences if needed
-			if r == '\\' {
-				escaped, ok := stream.NextChar()
-				if !ok {
-					return nil
-				}
-				value = append(value, escaped)
-			}
+			value = append(value, escaped)
 		}
 	}
 }
@@ -200,90 +250,197 @@ func StringMatcher() tokenizer.Matcher {
 // NameMatcher creates a matcher for XML names (element and attribute names).
 // Matches: [A-Za-z_:][A-Za-z0-9_:.-]*
 // Supports namespaces with colon (e.g., "ns:element")
+// Uses ByteStream fast path for optimal performance on ASCII names.
 func NameMatcher() tokenizer.Matcher {
 	return func(stream tokenizer.Stream) *tokenizer.Token {
+		// Try ByteStream fast path for ASCII names
+		if byteStream, ok := stream.(tokenizer.ByteStream); ok {
+			return nameMatcherByte(byteStream)
+		}
+
+		// Fallback to rune-based matcher
+		return nameMatcherRune(stream)
+	}
+}
+
+// nameMatcherByte uses ByteStream for optimal name scanning.
+func nameMatcherByte(stream tokenizer.ByteStream) *tokenizer.Token {
+	b, ok := stream.PeekByte()
+	if !ok {
+		return nil
+	}
+
+	// First character must be letter, underscore, or colon
+	if !isNameStartByte(b) {
+		return nil
+	}
+
+	startPos := stream.BytePosition()
+
+	// Consume name characters
+	for {
+		b, ok := stream.PeekByte()
+		if !ok {
+			break
+		}
+
+		if !isNameByte(b) {
+			break
+		}
+
+		stream.NextByte()
+	}
+
+	// Extract the name value
+	value := stream.SliceFrom(startPos)
+	if len(value) == 0 {
+		return nil
+	}
+
+	return tokenizer.NewToken(TokenName, []rune(string(value)))
+}
+
+// nameMatcherRune is the fallback rune-based implementation.
+func nameMatcherRune(stream tokenizer.Stream) *tokenizer.Token {
+	r, ok := stream.PeekChar()
+	if !ok {
+		return nil
+	}
+
+	// First character must be letter, underscore, or colon
+	if !isNameStartChar(r) {
+		return nil
+	}
+
+	var value []rune
+	for {
 		r, ok := stream.PeekChar()
 		if !ok {
-			return nil
+			break
 		}
 
-		// First character must be letter, underscore, or colon
-		if !isNameStartChar(r) {
-			return nil
+		if !isNameChar(r) {
+			break
 		}
 
-		var value []rune
-		for {
-			r, ok := stream.PeekChar()
-			if !ok {
-				break
-			}
-
-			if !isNameChar(r) {
-				break
-			}
-
-			stream.NextChar()
-			value = append(value, r)
-		}
-
-		if len(value) == 0 {
-			return nil
-		}
-
-		return tokenizer.NewToken(TokenName, value)
+		stream.NextChar()
+		value = append(value, r)
 	}
+
+	if len(value) == 0 {
+		return nil
+	}
+
+	return tokenizer.NewToken(TokenName, value)
 }
 
 // TextMatcher creates a matcher for text content between tags.
 // Matches any text until < is encountered.
+// Uses ByteStream fast path with SWAR for optimal performance on ASCII text.
 func TextMatcher() tokenizer.Matcher {
 	return func(stream tokenizer.Stream) *tokenizer.Token {
-		r, ok := stream.PeekChar()
-		if !ok {
-			return nil
+		// Try ByteStream fast path for ASCII text
+		if byteStream, ok := stream.(tokenizer.ByteStream); ok {
+			return textMatcherByte(byteStream)
 		}
 
-		// Text cannot start with <
-		if r == '<' {
-			return nil
-		}
+		// Fallback to rune-based matcher
+		return textMatcherRune(stream)
+	}
+}
 
-		var value []rune
+// textMatcherByte uses ByteStream + SWAR for optimal text scanning.
+func textMatcherByte(stream tokenizer.ByteStream) *tokenizer.Token {
+	b, ok := stream.PeekByte()
+	if !ok {
+		return nil
+	}
+
+	// Text cannot start with <
+	if b == '<' {
+		return nil
+	}
+
+	startPos := stream.BytePosition()
+
+	// Use SWAR to find < delimiter quickly (8 bytes at a time)
+	remaining := stream.RemainingBytes()
+	offset := tokenizer.FindByte(remaining, '<')
+
+	if offset == -1 {
+		// No < found - consume all remaining bytes
 		for {
-			r, ok := stream.PeekChar()
+			_, ok := stream.NextByte()
 			if !ok {
 				break
 			}
-
-			// Stop at tag opening
-			if r == '<' {
-				break
-			}
-
-			stream.NextChar()
-			value = append(value, r)
 		}
-
-		if len(value) == 0 {
-			return nil
+	} else if offset == 0 {
+		// Starts with <, no text content
+		return nil
+	} else {
+		// Advance to the < position
+		for i := 0; i < offset; i++ {
+			stream.NextByte()
 		}
-
-		return tokenizer.NewToken(TokenText, value)
 	}
+
+	// Extract the text value
+	value := stream.SliceFrom(startPos)
+	if len(value) == 0 {
+		return nil
+	}
+
+	return tokenizer.NewToken(TokenText, []rune(string(value)))
+}
+
+// textMatcherRune is the fallback rune-based implementation.
+func textMatcherRune(stream tokenizer.Stream) *tokenizer.Token {
+	r, ok := stream.PeekChar()
+	if !ok {
+		return nil
+	}
+
+	// Text cannot start with <
+	if r == '<' {
+		return nil
+	}
+
+	var value []rune
+	for {
+		r, ok := stream.PeekChar()
+		if !ok {
+			break
+		}
+
+		// Stop at tag opening
+		if r == '<' {
+			break
+		}
+
+		stream.NextChar()
+		value = append(value, r)
+	}
+
+	if len(value) == 0 {
+		return nil
+	}
+
+	return tokenizer.NewToken(TokenText, value)
 }
 
 // Helper functions
 
 // matchString attempts to match a specific string at the current position.
 // Returns true and advances if match succeeds, returns false otherwise.
+// Uses GetLocation/SetLocation instead of Clone() to avoid allocations.
 func matchString(stream tokenizer.Stream, s string) bool {
-	checkpoint := stream.Clone()
+	savedLoc := stream.GetLocation()
 
 	for _, expected := range s {
 		r, ok := stream.NextChar()
 		if !ok || r != expected {
-			stream.Match(checkpoint)
+			stream.SetLocation(savedLoc)
 			return false
 		}
 	}
@@ -307,4 +464,20 @@ func isNameChar(r rune) bool {
 		(r >= '0' && r <= '9') ||
 		r == '.' ||
 		r == '-'
+}
+
+// isNameStartByte returns true if b can start an XML name (byte version).
+func isNameStartByte(b byte) bool {
+	return (b >= 'A' && b <= 'Z') ||
+		(b >= 'a' && b <= 'z') ||
+		b == '_' ||
+		b == ':'
+}
+
+// isNameByte returns true if b can appear in an XML name (byte version).
+func isNameByte(b byte) bool {
+	return isNameStartByte(b) ||
+		(b >= '0' && b <= '9') ||
+		b == '.' ||
+		b == '-'
 }

@@ -265,7 +265,7 @@ func TestParseElement_Nested(t *testing.T) {
 
 	// Verify we have child data (even if structure is different than expected)
 	data := elem.ToMap()
-	if data == nil || len(data) == 0 {
+	if len(data) == 0 {
 		t.Error("Expected non-empty data")
 	}
 }
