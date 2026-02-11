@@ -1,10 +1,7 @@
 package xml
 
 import (
-	"bytes"
-	"fmt"
 	"reflect"
-	"sort"
 	"strconv"
 
 	"github.com/shapestone/shape-xml/internal/fastparser"
@@ -59,34 +56,43 @@ import (
 // XML cannot represent cyclic data structures and Marshal does not handle them.
 // Passing cyclic structures to Marshal will result in an error.
 func Marshal(v interface{}) ([]byte, error) {
-	buf := getBuffer()
-	defer putBuffer(buf)
+	if v == nil {
+		return []byte("<root/>"), nil
+	}
 
-	// For struct types, we need the root element name
 	rv := reflect.ValueOf(v)
-	if rv.Kind() == reflect.Ptr {
+	for rv.Kind() == reflect.Ptr {
+		if rv.IsNil() {
+			return []byte("<root/>"), nil
+		}
 		rv = rv.Elem()
 	}
 
+	// Determine root element name.
+	rootName := "root"
 	if rv.Kind() == reflect.Struct {
-		// Use the struct type name as root element name
-		rootName := rv.Type().Name()
-		if rootName == "" {
-			rootName = "root"
-		}
-		if err := marshalValue(rv, buf, rootName); err != nil {
-			return nil, err
-		}
-	} else {
-		// For non-struct types, wrap in a root element
-		if err := marshalValue(rv, buf, "root"); err != nil {
-			return nil, err
+		if name := rv.Type().Name(); name != "" {
+			rootName = name
 		}
 	}
 
-	// Must copy since buffer will be returned to pool
-	result := make([]byte, buf.Len())
-	copy(result, buf.Bytes())
+	enc := xmlEncoderForType(rv.Type())
+
+	bp := xmlBufPool.Get().(*[]byte)
+	buf := (*bp)[:0]
+
+	var err error
+	buf, err = enc(buf, rv, rootName)
+	if err != nil {
+		*bp = buf
+		xmlBufPool.Put(bp)
+		return nil, err
+	}
+
+	result := make([]byte, len(buf))
+	copy(result, buf)
+	*bp = buf
+	xmlBufPool.Put(bp)
 	return result, nil
 }
 
@@ -102,284 +108,6 @@ func MarshalIndent(v interface{}, prefix, indent string) ([]byte, error) {
 // Marshaler is the interface implemented by types that can marshal themselves into valid XML.
 type Marshaler interface {
 	MarshalXML() ([]byte, error)
-}
-
-// marshalValue marshals a reflect.Value to a buffer as an XML element
-func marshalValue(rv reflect.Value, buf *bytes.Buffer, elementName string) error {
-	// Handle invalid values
-	if !rv.IsValid() {
-		buf.WriteString("<")
-		buf.WriteString(elementName)
-		buf.WriteString("/>")
-		return nil
-	}
-
-	// Handle nil interface
-	if rv.Kind() == reflect.Interface && rv.IsNil() {
-		buf.WriteString("<")
-		buf.WriteString(elementName)
-		buf.WriteString("/>")
-		return nil
-	}
-
-	// Check if type implements Marshaler interface
-	if rv.Type().Implements(reflect.TypeOf((*Marshaler)(nil)).Elem()) {
-		marshaler := rv.Interface().(Marshaler)
-		b, err := marshaler.MarshalXML()
-		if err != nil {
-			return err
-		}
-		buf.Write(b)
-		return nil
-	}
-
-	// Dereference interface
-	if rv.Kind() == reflect.Interface {
-		return marshalValue(rv.Elem(), buf, elementName)
-	}
-
-	// Handle pointers
-	if rv.Kind() == reflect.Ptr {
-		if rv.IsNil() {
-			buf.WriteString("<")
-			buf.WriteString(elementName)
-			buf.WriteString("/>")
-			return nil
-		}
-		return marshalValue(rv.Elem(), buf, elementName)
-	}
-
-	switch rv.Kind() {
-	case reflect.String:
-		return marshalString(rv.String(), buf, elementName)
-
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return marshalString(strconv.FormatInt(rv.Int(), 10), buf, elementName)
-
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return marshalString(strconv.FormatUint(rv.Uint(), 10), buf, elementName)
-
-	case reflect.Float32, reflect.Float64:
-		return marshalString(strconv.FormatFloat(rv.Float(), 'g', -1, 64), buf, elementName)
-
-	case reflect.Bool:
-		return marshalString(strconv.FormatBool(rv.Bool()), buf, elementName)
-
-	case reflect.Struct:
-		return marshalStruct(rv, buf, elementName)
-
-	case reflect.Map:
-		return marshalMap(rv, buf, elementName)
-
-	case reflect.Slice, reflect.Array:
-		return marshalSlice(rv, buf, elementName)
-
-	default:
-		return fmt.Errorf("xml: unsupported type %s", rv.Type())
-	}
-}
-
-// marshalString marshals a string value as an XML element with text content
-func marshalString(s string, buf *bytes.Buffer, elementName string) error {
-	buf.WriteString("<")
-	buf.WriteString(elementName)
-	buf.WriteString(">")
-	buf.WriteString(escapeXML(s))
-	buf.WriteString("</")
-	buf.WriteString(elementName)
-	buf.WriteString(">")
-	return nil
-}
-
-// marshalStruct marshals a struct to XML
-func marshalStruct(rv reflect.Value, buf *bytes.Buffer, elementName string) error {
-	structType := rv.Type()
-
-	// Start element opening tag
-	buf.WriteString("<")
-	buf.WriteString(elementName)
-
-	// Collect attributes and content fields
-	type attrEntry struct {
-		name  string
-		value string
-	}
-	var attrs []attrEntry
-	var textContent string
-	var cdataContent string
-
-	// Collect child elements
-	type childEntry struct {
-		name  string
-		value reflect.Value
-	}
-	var children []childEntry
-
-	for i := 0; i < structType.NumField(); i++ {
-		field := structType.Field(i)
-
-		// Skip unexported fields
-		if field.PkgPath != "" {
-			continue
-		}
-
-		info := getFieldInfo(field)
-
-		// Skip fields with "-" tag
-		if info.skip {
-			continue
-		}
-
-		fieldVal := rv.Field(i)
-
-		// Handle omitempty
-		if info.omitEmpty && isEmptyValue(fieldVal) {
-			continue
-		}
-
-		// Handle attributes
-		if info.attr {
-			attrVal := formatValue(fieldVal)
-			if attrVal != "" {
-				attrs = append(attrs, attrEntry{name: info.name, value: attrVal})
-			}
-			continue
-		}
-
-		// Handle chardata (text content)
-		if info.chardata {
-			textContent = formatValue(fieldVal)
-			continue
-		}
-
-		// Handle cdata
-		if info.cdata {
-			cdataContent = formatValue(fieldVal)
-			continue
-		}
-
-		// Regular child element
-		children = append(children, childEntry{name: info.name, value: fieldVal})
-	}
-
-	// Sort attributes for deterministic output
-	sort.Slice(attrs, func(i, j int) bool {
-		return attrs[i].name < attrs[j].name
-	})
-
-	// Write attributes
-	for _, attr := range attrs {
-		buf.WriteString(" ")
-		buf.WriteString(attr.name)
-		buf.WriteString("=\"")
-		buf.WriteString(escapeXML(attr.value))
-		buf.WriteString("\"")
-	}
-
-	// Check if we have any content
-	hasContent := textContent != "" || cdataContent != "" || len(children) > 0
-
-	if !hasContent {
-		// Self-closing tag
-		buf.WriteString("/>")
-		return nil
-	}
-
-	// Close opening tag
-	buf.WriteString(">")
-
-	// Write text content
-	if textContent != "" {
-		buf.WriteString(escapeXML(textContent))
-	}
-
-	// Write CDATA content
-	if cdataContent != "" {
-		buf.WriteString("<![CDATA[")
-		buf.WriteString(cdataContent)
-		buf.WriteString("]]>")
-	}
-
-	// Write child elements
-	for _, child := range children {
-		if err := marshalValue(child.value, buf, child.name); err != nil {
-			return err
-		}
-	}
-
-	// Close element
-	buf.WriteString("</")
-	buf.WriteString(elementName)
-	buf.WriteString(">")
-
-	return nil
-}
-
-// marshalMap marshals a map to XML
-func marshalMap(rv reflect.Value, buf *bytes.Buffer, elementName string) error {
-	if rv.IsNil() {
-		buf.WriteString("<")
-		buf.WriteString(elementName)
-		buf.WriteString("/>")
-		return nil
-	}
-
-	mapType := rv.Type()
-
-	// Only support string keys
-	if mapType.Key().Kind() != reflect.String {
-		return fmt.Errorf("xml: unsupported map key type %s", mapType.Key())
-	}
-
-	// Start element
-	buf.WriteString("<")
-	buf.WriteString(elementName)
-	buf.WriteString(">")
-
-	// Get keys and sort them for deterministic output
-	keys := rv.MapKeys()
-	strKeys := make([]string, len(keys))
-	for i, key := range keys {
-		strKeys[i] = key.String()
-	}
-	sort.Strings(strKeys)
-
-	// Marshal each key-value pair as a child element
-	for _, keyStr := range strKeys {
-		key := reflect.ValueOf(keyStr)
-		val := rv.MapIndex(key)
-		if err := marshalValue(val, buf, keyStr); err != nil {
-			return err
-		}
-	}
-
-	// Close element
-	buf.WriteString("</")
-	buf.WriteString(elementName)
-	buf.WriteString(">")
-
-	return nil
-}
-
-// marshalSlice marshals a slice or array to XML
-func marshalSlice(rv reflect.Value, buf *bytes.Buffer, elementName string) error {
-	// Nil slices encode as empty element
-	if rv.Kind() == reflect.Slice && rv.IsNil() {
-		buf.WriteString("<")
-		buf.WriteString(elementName)
-		buf.WriteString("/>")
-		return nil
-	}
-
-	// For slices, we marshal each element with the same element name
-	length := rv.Len()
-	for i := 0; i < length; i++ {
-		if err := marshalValue(rv.Index(i), buf, elementName); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // formatValue formats a reflect.Value as a string for attribute values or text content
