@@ -175,7 +175,38 @@ func TestNodeToInterface(t *testing.T) {
 			}(),
 			want: map[string]interface{}{"name": "test"},
 		},
-		// ArrayNode conversion not tested as it returns nil in NodeToInterface
+		{
+			name: "array data node",
+			node: func() ast.SchemaNode {
+				elements := []ast.SchemaNode{
+					ast.NewLiteralNode("a", ast.Position{}),
+					ast.NewLiteralNode("b", ast.Position{}),
+				}
+				return ast.NewArrayDataNode(elements, ast.Position{})
+			}(),
+			want: []interface{}{"a", "b"},
+		},
+		{
+			name: "whole number float to int64",
+			node: ast.NewLiteralNode(float64(42.0), ast.Position{}),
+			want: int64(42),
+		},
+		{
+			name: "nil node returns nil",
+			node: nil,
+			want: nil,
+		},
+		{
+			name: "object with sequential numeric keys (legacy array)",
+			node: func() ast.SchemaNode {
+				props := map[string]ast.SchemaNode{
+					"0": ast.NewLiteralNode("x", ast.Position{}),
+					"1": ast.NewLiteralNode("y", ast.Position{}),
+				}
+				return ast.NewObjectNode(props, ast.Position{})
+			}(),
+			want: []interface{}{"x", "y"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -186,4 +217,111 @@ func TestNodeToInterface(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInterfaceToNode_AdditionalTypes(t *testing.T) {
+	checkLiteral := func(t *testing.T, node ast.SchemaNode, want interface{}) {
+		t.Helper()
+		lit, ok := node.(*ast.LiteralNode)
+		if !ok {
+			t.Fatalf("expected *ast.LiteralNode, got %T", node)
+		}
+		if !reflect.DeepEqual(lit.Value(), want) {
+			t.Errorf("got %v (%T), want %v (%T)", lit.Value(), lit.Value(), want, want)
+		}
+	}
+
+	t.Run("int32", func(t *testing.T) {
+		node, err := InterfaceToNode(int32(99))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkLiteral(t, node, int64(99))
+	})
+
+	t.Run("int16", func(t *testing.T) {
+		node, err := InterfaceToNode(int16(16))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkLiteral(t, node, int64(16))
+	})
+
+	t.Run("int8", func(t *testing.T) {
+		node, err := InterfaceToNode(int8(8))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkLiteral(t, node, int64(8))
+	})
+
+	t.Run("uint", func(t *testing.T) {
+		node, err := InterfaceToNode(uint(10))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkLiteral(t, node, int64(10))
+	})
+
+	t.Run("uint64", func(t *testing.T) {
+		node, err := InterfaceToNode(uint64(64))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkLiteral(t, node, int64(64))
+	})
+
+	t.Run("uint32", func(t *testing.T) {
+		node, err := InterfaceToNode(uint32(32))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkLiteral(t, node, int64(32))
+	})
+
+	t.Run("uint16", func(t *testing.T) {
+		node, err := InterfaceToNode(uint16(16))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkLiteral(t, node, int64(16))
+	})
+
+	t.Run("uint8", func(t *testing.T) {
+		node, err := InterfaceToNode(uint8(8))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkLiteral(t, node, int64(8))
+	})
+
+	t.Run("float32", func(t *testing.T) {
+		node, err := InterfaceToNode(float32(1.5))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkLiteral(t, node, float64(float32(1.5)))
+	})
+}
+
+func TestReleaseTree(t *testing.T) {
+	t.Run("object with children", func(t *testing.T) {
+		inner := ast.NewLiteralNode("val", ast.Position{})
+		elements := []ast.SchemaNode{inner}
+		arr := ast.NewArrayDataNode(elements, ast.Position{})
+		props := map[string]ast.SchemaNode{"arr": arr}
+		root := ast.NewObjectNode(props, ast.Position{})
+		// Should not panic
+		ReleaseTree(root)
+	})
+
+	t.Run("nil node", func(t *testing.T) {
+		// Should not panic
+		ReleaseTree(nil)
+	})
+
+	t.Run("literal node", func(t *testing.T) {
+		node := ast.NewLiteralNode("test", ast.Position{})
+		ReleaseTree(node)
+	})
 }

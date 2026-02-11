@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -395,6 +396,7 @@ func BenchmarkStdXML_Marshal_Small(b *testing.B) {
 		Name:   "Alice",
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		bytes, err := xml.Marshal(&user)
@@ -458,6 +460,7 @@ func BenchmarkStdXML_Marshal_Medium(b *testing.B) {
 		},
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		bytes, err := xml.Marshal(&users)
@@ -482,6 +485,7 @@ func BenchmarkShapeXML_Marshal_Small(b *testing.B) {
 		Name:   "Alice",
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		bytes, err := shapexml.Marshal(&user)
@@ -545,6 +549,7 @@ func BenchmarkShapeXML_Marshal_Medium(b *testing.B) {
 		},
 	}
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		bytes, err := shapexml.Marshal(&users)
@@ -714,5 +719,69 @@ func BenchmarkShapeXML_Roundtrip_Medium(b *testing.B) {
 
 		// Prevent compiler optimization
 		_ = bytes
+	}
+}
+
+// ================================
+// Large Marshal Benchmarks
+// ================================
+
+// BenchmarkShapeXML_Marshal_Large benchmarks shape-xml marshaling on a large struct with 100 items
+func BenchmarkShapeXML_Marshal_Large(b *testing.B) {
+	type Item struct {
+		ID    string `xml:"id,attr"`
+		Name  string `xml:"name"`
+		Price string `xml:"price"`
+	}
+	type Catalog struct {
+		Items []Item `xml:"item"`
+	}
+	cat := Catalog{}
+	for i := 0; i < 100; i++ {
+		cat.Items = append(cat.Items, Item{
+			ID:    strconv.Itoa(i),
+			Name:  "Item " + strconv.Itoa(i),
+			Price: strconv.FormatFloat(float64(i)*9.99, 'f', 2, 64),
+		})
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		out, err := shapexml.Marshal(&cat)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = out
+	}
+}
+
+// BenchmarkEncodingXML_Marshal_Large benchmarks encoding/xml marshaling on a large struct with 100 items
+func BenchmarkEncodingXML_Marshal_Large(b *testing.B) {
+	type Item struct {
+		XMLName xml.Name `xml:"item"`
+		ID      string   `xml:"id,attr"`
+		Name    string   `xml:"name"`
+		Price   string   `xml:"price"`
+	}
+	type Catalog struct {
+		XMLName xml.Name `xml:"Catalog"`
+		Items   []Item   `xml:"item"`
+	}
+	cat := Catalog{}
+	for i := 0; i < 100; i++ {
+		cat.Items = append(cat.Items, Item{
+			ID:    strconv.Itoa(i),
+			Name:  "Item " + strconv.Itoa(i),
+			Price: strconv.FormatFloat(float64(i)*9.99, 'f', 2, 64),
+		})
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		out, err := xml.Marshal(&cat)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = out
 	}
 }
