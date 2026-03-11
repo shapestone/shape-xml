@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Data race in encoder cache: placeholder closure for recursive types now blocks with `sync.WaitGroup` until the real encoder is assigned, preventing a nil function call when multiple goroutines marshal the same type concurrently
+
 ## [0.9.0] - 2025-12-29
 
 ### Added
