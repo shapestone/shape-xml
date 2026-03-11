@@ -49,9 +49,14 @@ func xmlEncoderForType(t reflect.Type) xmlEncoderFunc {
 	}
 
 	// Insert a placeholder to handle recursive types.
-	// The placeholder will forward calls to the real encoder once it's built.
+	// The placeholder blocks until the real encoder is built, matching the
+	// same WaitGroup pattern used in shape-json to prevent a data race where
+	// a concurrent goroutine invokes the placeholder before realEnc is assigned.
+	var wg sync.WaitGroup
+	wg.Add(1)
 	var realEnc xmlEncoderFunc
 	placeholder := func(buf []byte, rv reflect.Value, elemName string) ([]byte, error) {
+		wg.Wait()
 		return realEnc(buf, rv, elemName)
 	}
 
@@ -70,6 +75,7 @@ func xmlEncoderForType(t reflect.Type) xmlEncoderFunc {
 	// Build the actual encoder. This may recursively call xmlEncoderForType
 	// for child types; those calls will find the placeholder in the cache.
 	realEnc = buildXMLEncoder(t)
+	wg.Done() // unblock any goroutines waiting on the placeholder
 
 	// Replace placeholder with real encoder under lock.
 	xmlEncoderMu.Lock()
