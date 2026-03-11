@@ -262,7 +262,7 @@ go func() { xml.Validate(input2) }()
 
 ### Thread Safety Guarantees
 
-- **`Unmarshal()`, `Marshal()`** - Thread-safe
+- **`Unmarshal()`, `Marshal()`** - Thread-safe; encoder cache uses copy-on-write with `sync.WaitGroup` to safely handle recursive types under concurrent load
 - **`Parse()`, `Validate()`** - Thread-safe, create new parser instances
 - **Race detector verified** - All tests pass with `go test -race`
 
