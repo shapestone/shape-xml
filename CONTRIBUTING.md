@@ -62,8 +62,8 @@ Feature requests are welcome! Please:
    # Run benchmarks
    make bench
    
-   # Run linter (if available)
-   golangci-lint run
+   # Run linter
+   make lint
    ```
 
 5. **Commit Changes**

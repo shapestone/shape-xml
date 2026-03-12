@@ -14,9 +14,46 @@
 
 **Repository:** github.com/shapestone/shape-xml
 
-An XML parser for the [Shape Parser™](https://github.com/shapestone/shape) ecosystem.
+**A Go library for parsing, validating, and building XML documents — part of the Shape Parser ecosystem.**
 
-Parses XML documents into Shape Parser's™ unified AST representation.
+## Overview
+
+shape-xml parses XML (Extensible Markup Language) documents into a unified Abstract Syntax Tree (AST) that integrates with the Shape Parser ecosystem. It solves the problem of needing both fast XML validation *and* full structural parsing in the same library — without juggling two different dependencies. Whether you're validating a configuration file, ingesting a data feed, or transforming XML into another format, shape-xml gives you one consistent API.
+
+**Who it's for:**
+- Go developers who need to parse, validate, or transform XML configuration files, data feeds, or API payloads
+- Teams building format-agnostic data pipelines who want a unified AST across JSON, YAML, and XML
+- Anyone who needs thread-safe, concurrent XML processing in production Go services
+
+## Quick Start
+
+```bash
+# Install
+go get github.com/shapestone/shape-xml
+
+# Run tests
+make test
+
+# Run tests with coverage report
+make coverage
+
+# Build
+make build
+```
+
+## Make Targets
+
+| Target            | Description                                                         |
+|-------------------|---------------------------------------------------------------------|
+| `make test`       | Run all tests with race detection                                   |
+| `make lint`       | Run golangci-lint linter                                            |
+| `make build`      | Build all packages                                                  |
+| `make coverage`   | Generate HTML coverage report in `coverage/`                        |
+| `make clean`      | Remove generated files (coverage dir, build artifacts)              |
+| `make all`        | Run test, lint, build, and coverage in sequence                     |
+| `make bench`      | Run all benchmarks with memory stats                                |
+| `make bench-report` | Run benchmarks and save results to `benchmarks/results.txt`       |
+| `make fuzz`       | Run fuzz tests (30 seconds each for Parse, Validate, Parser)        |
 
 ## Installation
 
@@ -108,7 +145,7 @@ err = xml.Unmarshal(data, &parsed)
 ## Features
 
 - **Dual-Path Parser Pattern**
-  - Fast validation path (4-5x faster, no AST construction)
+  - Fast validation path (4-5x faster, no AST (Abstract Syntax Tree) construction)
   - Full parsing path (complete AST generation)
   - Automatic path selection for optimal performance
 - **Streaming Support**
@@ -134,6 +171,16 @@ err = xml.Unmarshal(data, &parsed)
   - LL(1) Recursive Descent Parser
 - **Shape AST Integration**: Returns unified AST nodes for advanced use cases
 - **Comprehensive Error Messages**: Context-aware error reporting
+
+## Use Cases
+
+- **Config file parsing**: Read and validate XML configuration files (Spring, Maven `pom.xml`, Ant build files, `.csproj`) into typed Go structs
+- **Data feed ingestion**: Parse RSS/Atom feeds, SOAP responses, or EDI XML payloads from external APIs
+- **XML validation pipeline**: Use the fast-path `Validate()` to gate ingestion before processing — no wasted allocations on malformed input
+- **Format conversion**: Parse XML into the Shape AST and re-render as JSON or YAML using the sibling shape-json / shape-yaml parsers
+- **XML generation**: Build well-formed XML documents programmatically using the fluent DOM API without error-prone string templating
+- **Round-trip transformation**: Parse → modify AST → render back to XML while preserving document structure
+- **Concurrent document processing**: Process thousands of XML documents in parallel goroutines safely — all public APIs are thread-safe
 
 ## XML → AST Conventions
 
@@ -213,9 +260,9 @@ make bench
 
 shape-xml uses a **unified architecture** with custom parsers:
 
-- **Grammar-Driven**: EBNF grammar in `docs/grammar/xml.ebnf`
+- **Grammar-Driven**: EBNF (Extended Backus-Naur Form) grammar in `docs/grammar/xml.ebnf`
 - **Tokenizer**: Custom tokenizer using Shape's framework
-- **Parser**: LL(1) recursive descent with single token lookahead
+- **Parser**: LL(1) (Left-to-right, Leftmost derivation, 1-token lookahead) recursive descent
 - **Rendering**: Custom XML renderer
 - **AST Representation**:
   - Elements → `*ast.ObjectNode` with properties map
@@ -281,16 +328,13 @@ shape-xml has comprehensive test coverage including unit tests, fuzzing, and gra
 
 ```bash
 # Run all tests
-go test ./...
+make test
 
 # Run with coverage
 make coverage
 
 # Run fuzzing tests
 make fuzz
-
-# Run grammar verification
-make grammar-test
 ```
 
 ### Fuzzing
