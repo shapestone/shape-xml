@@ -107,7 +107,7 @@ func MarshalIndent(v interface{}, prefix, indent string) ([]byte, error) {
 
 // Marshaler is the interface implemented by types that can marshal themselves into valid XML.
 type Marshaler interface {
-	MarshalXML() ([]byte, error)
+	MarshalXML() ([]byte, error) //nolint:govet // signature differs from encoding/xml on purpose; rename planned for Phase 1
 }
 
 // formatValue formats a reflect.Value as a string for attribute values or text content

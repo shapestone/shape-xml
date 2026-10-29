@@ -102,12 +102,12 @@ func TestValidate_XXENoConnection(t *testing.T) {
 	if err != nil {
 		t.Skip("cannot listen:", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	accepted := make(chan struct{}, 1)
 	go func() {
 		if c, err := ln.Accept(); err == nil {
 			accepted <- struct{}{}
-			c.Close()
+			_ = c.Close()
 		}
 	}()
 

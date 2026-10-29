@@ -30,13 +30,13 @@ func TestValidate_XXEDoesNotOpenFiles(t *testing.T) {
 		// Blocks until a reader opens the FIFO.
 		if w, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
 			close(opened)
-			w.Close()
+			_ = w.Close()
 		}
 	}()
 	// Release the writer goroutine when the test ends.
 	defer func() {
 		if r, err := os.OpenFile(fifo, os.O_RDONLY|syscall.O_NONBLOCK, 0); err == nil {
-			r.Close()
+			_ = r.Close()
 		}
 	}()
 
@@ -63,7 +63,7 @@ func trapTripped(fifo string, read func()) bool {
 	done := make(chan struct{})
 	go func() {
 		if w, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
-			w.Close()
+			_ = w.Close()
 		}
 		close(done)
 	}()
