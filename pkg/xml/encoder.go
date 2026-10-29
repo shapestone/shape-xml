@@ -104,7 +104,7 @@ func buildXMLEncoder(t reflect.Type) xmlEncoderFunc {
 	}
 
 	switch t.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return buildXMLPtrEncoder(t)
 	case reflect.Interface:
 		return xmlInterfaceEnc
@@ -162,7 +162,7 @@ func buildXMLAddrMarshalerEnc(t reflect.Type) xmlEncoderFunc {
 // Used as fallback when we cannot take the address.
 func buildXMLEncoderNoMarshaler(t reflect.Type) xmlEncoderFunc {
 	switch t.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return buildXMLPtrEncoder(t)
 	case reflect.Interface:
 		return xmlInterfaceEnc

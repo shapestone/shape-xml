@@ -61,7 +61,7 @@ func Marshal(v interface{}) ([]byte, error) {
 	}
 
 	rv := reflect.ValueOf(v)
-	for rv.Kind() == reflect.Ptr {
+	for rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
 			return []byte("<root/>"), nil
 		}
@@ -127,7 +127,7 @@ func formatValue(rv reflect.Value) string {
 		return strconv.FormatFloat(rv.Float(), 'g', -1, 64)
 	case reflect.Bool:
 		return strconv.FormatBool(rv.Bool())
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		if rv.IsNil() {
 			return ""
 		}
