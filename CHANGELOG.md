@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-29
+
 ### Fixed
 - Data race in encoder cache: placeholder closure for recursive types now blocks with `sync.WaitGroup` until the real encoder is assigned, preventing a nil function call when multiple goroutines marshal the same type concurrently
 
@@ -52,5 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Array detection logic in convert.go
 - Unused variable cleanup in tokenizer
 
-[Unreleased]: https://github.com/shapestone/shape-xml/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/shapestone/shape-xml/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/shapestone/shape-xml/releases/tag/v0.10.2
 [0.9.0]: https://github.com/shapestone/shape-xml/releases/tag/v0.9.0
