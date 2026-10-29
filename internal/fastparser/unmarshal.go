@@ -19,7 +19,7 @@ func Unmarshal(data []byte, v interface{}) error {
 		return errors.New("xml: Unmarshal(nil)")
 	}
 
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		return errors.New("xml: Unmarshal(non-pointer " + rv.Type().String() + ")")
 	}
 
@@ -64,7 +64,7 @@ func unmarshalValue(value interface{}, rv reflect.Value) error {
 	}
 
 	// Handle pointers
-	if rv.Kind() == reflect.Ptr {
+	if rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
 			rv.Set(reflect.New(rv.Type().Elem()))
 		}
