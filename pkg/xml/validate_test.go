@@ -78,6 +78,14 @@ var validateCases = []struct {
 	{"single-quoted attribute", `<a x='1'/>`, true, ""},
 	{"whitespace around =", `<a x = "1" />`, true, ""},
 	{"emoji in text", "<a>😀</a>", true, ""},
+	{"]]> in double-quoted attribute", `<a b="x]]>y"/>`, true, ""},
+	{"]]> in single-quoted attribute", `<a b='x]]>y'/>`, true, ""},
+	{"two colons in element name", "<a:b:c></a:b:c>", false, ""},
+	{"two colons in end tag", "<a:b:c></a:b:c >", false, ""},
+	{"two colons in attribute name", `<a xml:a:g="x"/>`, false, ""},
+	{"two colons in PI target", "<?a:b:c d?><a/>", true, ""},
+	{"declaration param search continues", `<?xml version=1.version="1.0"?><a/>`, true, ""},
+	{"declaration param search finds bad version", `<?xml version=1.version="2.0"?><a/>`, false, ""},
 
 	// Structure: encoding/xml requires matching tags, but not a single root.
 	{"empty input", "", true, ""},

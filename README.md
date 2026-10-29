@@ -358,7 +358,7 @@ go test ./pkg/xml -fuzz=FuzzMarshal -fuzztime=30s
 
 ### Validation Functions
 
-- `Validate(input string) error` - Fast validation without AST; verdicts match `encoding/xml` (DOCTYPE skipped, never processed)
+- `Validate(input string) error` - Fast validation without AST; verdicts follow `encoding/xml` with documented deviations (DOCTYPE skipped, never processed; no single-root requirement)
 - `ValidateReader(reader io.Reader) error` - Validate from stream
 
 ### Marshaling Functions

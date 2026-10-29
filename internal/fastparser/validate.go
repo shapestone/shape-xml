@@ -11,9 +11,11 @@ import (
 // found, with its line and column. It builds no tree and keeps no state beyond
 // a stack of open element names, so deep nesting costs heap, not call stack.
 //
-// The verdicts follow a token loop over encoding/xml's Decoder (Strict mode, no
-// CharsetReader): the input is a stream of tokens, and Validate does not require
-// exactly one root element, nor any element at all.
+// The verdicts aim to follow a token loop over encoding/xml's Decoder (Strict
+// mode, no CharsetReader): the input is a stream of tokens, and Validate does
+// not require exactly one root element, nor any element at all. The deliberate
+// deviation is that references to surrogate characters are rejected. See
+// pkg/xml.Validate for the full list.
 //
 // Accepted, as in encoding/xml: any number of root elements, empty input, text
 // outside the root, duplicate attributes, undeclared namespace prefixes, a
@@ -82,7 +84,7 @@ func (v *validator) run() error {
 
 func (v *validator) startTag() error {
 	nameStart := v.pos
-	name, ok := v.readName()
+	name, ok := v.readQName()
 	if !ok {
 		return v.errorf("expected element name after <")
 	}
@@ -106,7 +108,7 @@ func (v *validator) startTag() error {
 			v.pos++
 			break
 		}
-		if _, ok := v.readName(); !ok {
+		if _, ok := v.readQName(); !ok {
 			return v.errorf("expected attribute name in element <%s>", name)
 		}
 		v.skipSpace()
@@ -131,7 +133,7 @@ func (v *validator) startTag() error {
 }
 
 func (v *validator) endTag() error {
-	name, ok := v.readName()
+	name, ok := v.readQName()
 	if !ok {
 		return v.errorf("expected element name after </")
 	}
@@ -183,23 +185,35 @@ func (v *validator) procInst() error {
 	return nil
 }
 
-// procInstParam extracts a pseudo-attribute from an XML declaration, the way
-// encoding/xml does (not a full parse of the declaration).
+// procInstParam extracts a pseudo-attribute from an XML declaration the way
+// encoding/xml does: it looks for param followed by '=' and a quote character,
+// and keeps searching past occurrences where the '=' is not followed by a quote
+// (`version=1.version="1.0"` yields "1.0"). It is not a full parse of the
+// declaration.
 func procInstParam(param, s string) string {
 	param += "="
-	idx := strings.Index(s, param)
-	if idx == -1 {
+	i := 0
+	var quote byte
+	for i < len(s) {
+		sub := s[i:]
+		k := strings.Index(sub, param)
+		if k < 0 || len(param)+k >= len(sub) {
+			return ""
+		}
+		i += len(param) + k + 1
+		if c := sub[len(param)+k]; c == '\'' || c == '"' {
+			quote = c
+			break
+		}
+	}
+	if quote == 0 {
 		return ""
 	}
-	val := s[idx+len(param):]
-	if val == "" || (val[0] != '\'' && val[0] != '"') {
+	end := strings.IndexByte(s[i:], quote)
+	if end < 0 {
 		return ""
 	}
-	end := strings.IndexByte(val[1:], val[0])
-	if end == -1 {
-		return ""
-	}
-	return val[1 : end+1]
+	return s[i : i+end]
 }
 
 func equalFoldASCII(a, b string) bool {
@@ -331,7 +345,7 @@ func (v *validator) text(quote int) error {
 	for v.pos < len(v.data) {
 		b := v.data[v.pos]
 		switch {
-		case b == '>' && v.pos-runStart >= 2 && v.data[v.pos-1] == ']' && v.data[v.pos-2] == ']':
+		case quote < 0 && b == '>' && v.pos-runStart >= 2 && v.data[v.pos-1] == ']' && v.data[v.pos-2] == ']':
 			return v.errorf("unescaped ]]> not in CDATA section")
 		case b == '<':
 			if quote >= 0 {
@@ -446,6 +460,19 @@ func digitValue(c byte, base uint64) (uint64, bool) {
 		return uint64(c-'A') + 10, true
 	}
 	return 0, false
+}
+
+// readQName reads an element or attribute name. Like encoding/xml's nsname it
+// refuses a name with more than one colon ("a:b:c"). Processing-instruction
+// targets use readName, which has no such rule.
+func (v *validator) readQName() ([]byte, bool) {
+	start := v.pos
+	name, ok := v.readName()
+	if ok && bytes.Count(name, []byte(":")) > 1 {
+		v.pos = start
+		return nil, false
+	}
+	return name, ok
 }
 
 // readName reads an XML name at v.pos and returns it (a slice of v.data).
