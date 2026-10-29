@@ -123,11 +123,28 @@ func Format() string {
 	return "XML"
 }
 
-// Validate checks if the given string is valid XML.
-// It uses the fast parser for efficient validation without AST construction.
+// Validate checks if the given string is well-formed XML, with the same
+// verdicts as a token loop over encoding/xml's Decoder (Strict mode, no
+// CharsetReader). It uses a dedicated validator that builds no tree.
 //
 // Returns nil if the input is valid XML.
-// Returns an error with details about why the XML is invalid.
+// Returns an error with details (line and column) about why the XML is invalid.
+//
+// Rejected: unknown entities such as &bogus; (only lt, gt, amp, apos, quot are
+// defined), invalid character references (&#0;), characters XML forbids (NUL
+// and other control characters, U+FFFE, U+FFFF), invalid UTF-8, '<' inside an
+// attribute value, unquoted attributes, mismatched or unclosed tags, a
+// version other than 1.0, and an XML declaration naming an encoding other than
+// UTF-8.
+//
+// Accepted: a leading byte order mark, and a DOCTYPE. A DOCTYPE (including
+// its internal subset) is skipped without being processed: entities declared
+// there are not defined, parameter entities are not expanded, and external
+// SYSTEM/PUBLIC identifiers are never loaded. A reference to an entity that a
+// DOCTYPE declares is therefore an unknown entity and is rejected.
+//
+// Like encoding/xml, Validate does not require exactly one root element:
+// empty input, several root elements and text outside the root are accepted.
 //
 // This is the idiomatic Go approach - check the error:
 //
@@ -137,18 +154,15 @@ func Format() string {
 //	}
 //	// Valid XML - err is nil
 //
-// For validating large files or streaming data, use ValidateReader instead.
+// Validate does not limit input size or element depth; limit the input before
+// calling it if it is untrusted. See also ValidateReader.
 func Validate(input string) error {
-	parser := fastparser.NewParser([]byte(input))
-	_, err := parser.Parse()
-	return err
+	return fastparser.Validate([]byte(input))
 }
 
-// ValidateReader checks if the XML from an io.Reader is valid.
-// It uses the fast parser for efficient validation without AST construction.
-//
-// This function is designed for validating large XML files or streaming data
-// without loading the entire content into memory.
+// ValidateReader checks if the XML from an io.Reader is well-formed, with the
+// same rules as Validate. The whole input is read into memory first; wrap the
+// reader in io.LimitReader to cap its size.
 //
 // Returns nil if the input is valid XML.
 // Returns an error with details about why the XML is invalid.
@@ -171,7 +185,5 @@ func ValidateReader(reader io.Reader) error {
 	if err != nil {
 		return err
 	}
-	parser := fastparser.NewParser(data)
-	_, err = parser.Parse()
-	return err
+	return fastparser.Validate(data)
 }
