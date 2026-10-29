@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  test-go:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -69,6 +69,19 @@ jobs:
       - name: Build
         working-directory: shape-xml
         run: go build $(go list ./... | grep -v '/scripts')
+
+  # Stable check name "test" for branch protection; the matrix jobs report as "test-go (<version>)".
+  test:
+    needs: test-go
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all Go versions to pass
+        run: |
+          if [ "${{ needs.test-go.result }}" != "success" ]; then
+            echo "test-go result: ${{ needs.test-go.result }}"
+            exit 1
+          fi
 
   lint:
     runs-on: ubuntu-latest
