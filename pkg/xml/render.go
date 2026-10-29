@@ -230,7 +230,7 @@ func renderElement(node *ast.ObjectNode, buf *bytes.Buffer, prettyPrint bool, pr
 	if hasCDATA {
 		if literal, ok := cdataNode.(*ast.LiteralNode); ok {
 			buf.WriteString("<![CDATA[")
-			buf.WriteString(fmt.Sprintf("%v", literal.Value()))
+			fmt.Fprintf(buf, "%v", literal.Value())
 			buf.WriteString("]]>")
 		}
 	}

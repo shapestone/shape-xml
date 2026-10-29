@@ -7,8 +7,11 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  test-go:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.26', '1.27']
     steps:
       - uses: actions/checkout@v6
         with:
@@ -23,7 +26,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: ${{ matrix.go-version }}
           check-latest: true
           cache-dependency-path: shape-xml/go.sum
 
@@ -67,6 +70,19 @@ jobs:
         working-directory: shape-xml
         run: go build $(go list ./... | grep -v '/scripts')
 
+  # Stable check name "test" for branch protection; the matrix jobs report as "test-go (<version>)".
+  test:
+    needs: test-go
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all Go versions to pass
+        run: |
+          if [ "${{ needs.test-go.result }}" != "success" ]; then
+            echo "test-go result: ${{ needs.test-go.result }}"
+            exit 1
+          fi
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -83,12 +99,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
           check-latest: true
           cache-dependency-path: shape-xml/go.sum
 
       - name: Run linter
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           working-directory: shape-xml

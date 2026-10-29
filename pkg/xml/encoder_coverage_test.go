@@ -115,13 +115,13 @@ type testMarshaler struct {
 	val string
 }
 
-func (m testMarshaler) MarshalXML() ([]byte, error) {
+func (m testMarshaler) MarshalXML() ([]byte, error) { //nolint:govet // signature differs from encoding/xml on purpose; rename planned for Phase 1
 	return []byte("<custom>" + m.val + "</custom>"), nil
 }
 
 type testMarshalerErr struct{}
 
-func (m testMarshalerErr) MarshalXML() ([]byte, error) {
+func (m testMarshalerErr) MarshalXML() ([]byte, error) { //nolint:govet // signature differs from encoding/xml on purpose; rename planned for Phase 1
 	return nil, errTestMarshaler
 }
 
@@ -168,7 +168,7 @@ type addrMarshaler struct {
 	val string
 }
 
-func (m *addrMarshaler) MarshalXML() ([]byte, error) {
+func (m *addrMarshaler) MarshalXML() ([]byte, error) { //nolint:govet // signature differs from encoding/xml on purpose; rename planned for Phase 1
 	return []byte("<addr>" + m.val + "</addr>"), nil
 }
 

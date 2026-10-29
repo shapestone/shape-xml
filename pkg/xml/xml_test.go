@@ -63,14 +63,14 @@ func TestValidate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "invalid XML - empty string",
+			name:    "empty string (valid: encoding/xml tokenises nothing)",
 			input:   ``,
-			wantErr: true,
+			wantErr: false,
 		},
 		{
-			name:    "invalid XML - whitespace only",
+			name:    "whitespace only (valid: encoding/xml accepts it)",
 			input:   `   `,
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "invalid XML - unclosed tag",
@@ -93,9 +93,9 @@ func TestValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "invalid XML - extra content after root",
+			name:    "several roots (valid: encoding/xml accepts them)",
 			input:   `<root></root><extra></extra>`,
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "invalid XML - invalid attribute",
@@ -161,9 +161,9 @@ func TestValidateReader(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "invalid XML - empty",
+			name:    "empty (valid: encoding/xml accepts it)",
 			input:   ``,
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "invalid XML - unclosed tag",

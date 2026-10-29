@@ -8,7 +8,7 @@ import (
 
 // Unmarshaler is the interface implemented by types that can unmarshal an XML description of themselves.
 type Unmarshaler interface {
-	UnmarshalXML([]byte) error
+	UnmarshalXML([]byte) error //nolint:govet // signature differs from encoding/xml on purpose; rename planned for Phase 1
 }
 
 // Unmarshal parses XML and unmarshals it into the value pointed to by v.
@@ -19,7 +19,7 @@ func Unmarshal(data []byte, v interface{}) error {
 		return errors.New("xml: Unmarshal(nil)")
 	}
 
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		return errors.New("xml: Unmarshal(non-pointer " + rv.Type().String() + ")")
 	}
 
@@ -64,7 +64,7 @@ func unmarshalValue(value interface{}, rv reflect.Value) error {
 	}
 
 	// Handle pointers
-	if rv.Kind() == reflect.Ptr {
+	if rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
 			rv.Set(reflect.New(rv.Type().Elem()))
 		}
@@ -127,9 +127,10 @@ func unmarshalStruct(m map[string]interface{}, rv reflect.Value) error {
 						xmlName = tag[:idx]
 					}
 					remainder := tag[idx+1:]
-					if remainder == "attr" {
+					switch remainder {
+					case "attr":
 						isAttr = true
-					} else if remainder == "chardata" {
+					case "chardata":
 						isCharData = true
 					}
 					break

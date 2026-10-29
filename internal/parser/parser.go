@@ -397,11 +397,12 @@ func (p *Parser) skipCommentsAndWhitespace() {
 		}
 
 		kind := token.Kind()
-		if kind == tokenizer.TokenCommentStart {
+		switch kind {
+		case tokenizer.TokenCommentStart:
 			p.skipComment()
-		} else if kind == "Whitespace" {
+		case "Whitespace":
 			p.advance()
-		} else {
+		default:
 			return
 		}
 	}

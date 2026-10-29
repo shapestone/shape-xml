@@ -28,7 +28,7 @@ type CustomUnmarshaler struct {
 	Data string
 }
 
-func (c *CustomUnmarshaler) UnmarshalXML(data []byte) error {
+func (c *CustomUnmarshaler) UnmarshalXML(data []byte) error { //nolint:govet // signature differs from encoding/xml on purpose; rename planned for Phase 1
 	c.Data = string(data)
 	return nil
 }

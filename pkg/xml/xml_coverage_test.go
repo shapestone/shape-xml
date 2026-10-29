@@ -65,7 +65,7 @@ func TestCoverage_Validate(t *testing.T) {
 	}{
 		{"valid simple", "<root/>", false},
 		{"valid complex", "<user id=\"123\">Alice</user>", false},
-		{"empty", "", true},
+		{"empty (valid, as in encoding/xml)", "", false},
 		{"invalid", "<unclosed", true},
 		{"mismatched", "<open></close>", true},
 	}

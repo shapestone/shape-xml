@@ -99,12 +99,12 @@ func buildXMLEncoder(t reflect.Type) xmlEncoderFunc {
 	}
 
 	// Check if pointer-to-type implements Marshaler.
-	if t.Kind() != reflect.Ptr && reflect.PointerTo(t).Implements(xmlMarshalerType) {
+	if t.Kind() != reflect.Pointer && reflect.PointerTo(t).Implements(xmlMarshalerType) {
 		return buildXMLAddrMarshalerEnc(t)
 	}
 
 	switch t.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return buildXMLPtrEncoder(t)
 	case reflect.Interface:
 		return xmlInterfaceEnc
@@ -162,7 +162,7 @@ func buildXMLAddrMarshalerEnc(t reflect.Type) xmlEncoderFunc {
 // Used as fallback when we cannot take the address.
 func buildXMLEncoderNoMarshaler(t reflect.Type) xmlEncoderFunc {
 	switch t.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return buildXMLPtrEncoder(t)
 	case reflect.Interface:
 		return xmlInterfaceEnc

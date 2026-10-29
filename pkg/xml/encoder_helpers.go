@@ -51,7 +51,7 @@ func appendFormatValue(buf []byte, rv reflect.Value) []byte {
 		return strconv.AppendFloat(buf, rv.Float(), 'g', -1, 64)
 	case reflect.Bool:
 		return strconv.AppendBool(buf, rv.Bool())
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		if rv.IsNil() {
 			return buf
 		}

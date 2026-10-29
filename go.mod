@@ -1,6 +1,6 @@
 module github.com/shapestone/shape-xml
 
-go 1.23
+go 1.26
 
 require github.com/shapestone/shape-core v0.9.3
 
