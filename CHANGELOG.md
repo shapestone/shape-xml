@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Data race in encoder cache: placeholder closure for recursive types now blocks with `sync.WaitGroup` until the real encoder is assigned, preventing a nil function call when multiple goroutines marshal the same type concurrently
+
 ### Changed
 - `xml.Validate` and `xml.ValidateReader` now use a dedicated validator that aims to give the same verdicts as a token loop over `encoding/xml`'s Decoder (Strict mode, no CharsetReader). It is checked by a differential test against `encoding/xml` (seed documents, random fragments and mutations, including colons, quoted attributes and `]]>`) and by `FuzzValidate`; that is strong evidence, not a proof of identical verdicts for every input.
   - **Now rejected:** unknown entities (`&bogus;`; only `lt`, `gt`, `amp`, `apos`, `quot` exist), invalid character references (`&#0;`, `&#x1;`, out-of-range values, and surrogates such as `&#xD800;`), characters XML forbids (NUL and other control characters, U+FFFE, U+FFFF) and invalid UTF-8 in text, CDATA and attribute values, `<` in an attribute value, an unescaped `]]>` in element content (it is allowed inside an attribute value), element and attribute names with more than one colon (`<a:b:c>`), an XML declaration with a version other than 1.0, and an XML declaration naming an encoding other than UTF-8 (`ISO-8859-1`, `UTF-16`; there is no charset hook).
