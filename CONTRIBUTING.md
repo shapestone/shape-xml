@@ -87,7 +87,7 @@ Feature requests are welcome! Please:
 
 ### Prerequisites
 
-- Go 1.23 or higher
+- Go 1.26 or higher
 - Make (for running Makefile targets)
 
 ### Local Development
